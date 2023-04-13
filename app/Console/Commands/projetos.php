@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 
 class projetos extends Command
 {
-    protected $signature = 'sighub:projetos {opcao?}';
+    protected $signature = 'sighub:projetos {opcao?} {projeto?} {acao?}';
     protected $description = 'Command description';
     private array $projetos;
 
@@ -59,9 +59,8 @@ class projetos extends Command
 
         } while (isset($this->projetos[$nomeProjeto]));
 
-
         $ambientes = [];
-        $novoAmbiente = true;
+        $novoAmbiente = 'n';
 
         do {
             $nomeAmbiente = $this->ask('informe um nome para o ambiente');
@@ -80,9 +79,9 @@ class projetos extends Command
                 'raiz' => $raizAmbiente
             ];
 
-            $novoAmbiente = false;
+            $novoAmbiente = mb_strtoupper($this->ask('Deseja adicionar mais um ambiente? [y/n]'));
 
-        } while ($novoAmbiente);
+        } while ($novoAmbiente == 's');
 
         $this->projetos[$nomeProjeto] = $ambientes;
 

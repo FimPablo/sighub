@@ -1,11 +1,12 @@
 {
-    "issLegado": [
+    "arquivosComuns": [
         {
             "nome": "dev",
             "host": "172.16.20.111",
             "user": "pfim",
-            "keyFile": "C:\\Users\\pablo.fim\\Desktop\\pfim_etherium_dev",
-            "password": "@8dwLF"
+            "keyFile": "C:/Users/pablo.fim/Desktop/pfim_etherium_dev",
+            "password": "@8dwLF",
+            "raiz" : "/var/www/sigiss/arquivosComuns"
         }
     ]
 }

@@ -13,7 +13,7 @@ class sighub extends Command
      *
      * @var string
      */
-    protected $signature = 'sighub:teste';
+    protected $signature = 'sighub';
 
     /**
      * The console command description.
