@@ -26,6 +26,7 @@ class sighub extends Command
         $this->ambientes = self::getAmbientes();
 
         $opcao = $this->argument('acao');
+
         if (method_exists(self::class, $opcao)) {
             $this->$opcao();
             return;
@@ -36,16 +37,12 @@ class sighub extends Command
     private function clone()
     {
         $diretorio = $this->argument('arg2');
-        $ambiente = $this->argument('arg1');
+        $ambiente = $this->selecionaAmbiente($this->argument('arg1'));
 
-        $nomesAmbientes = Arr::pluck($this->ambientes, 'nome');
-        $indiceAmbienteSelecionado = array_keys($nomesAmbientes, $ambiente);
-
-        if (!count($indiceAmbienteSelecionado)) {
-            $this->error("Ambiente '{$ambiente}' não encontrado");
-            return;
+        if($ambiente === false)
+        {
+            return;            
         }
-        $ambiente = $this->ambientes[$indiceAmbienteSelecionado[0]];
 
         $this->sftp = self::conectarServidor($ambiente);
 
@@ -92,6 +89,40 @@ class sighub extends Command
         }
         $progresso->finish();
 
+        $this->info("Diretório clonado com sucesso!");
+    }
+
+    private function push()
+    {
+        $diretorio = $this->argument('arg2');
+        $ambiente = $this->selecionaAmbiente($this->argument('arg1'));
+
+        if($ambiente === false)
+        {
+            return;
+        }
+
+        $diretorioLocal = self::$diretorioLocal . $diretorio;
+        $diretoriosArray = explode('/', $diretorioLocal);
+        array_pop($diretoriosArray);
+        $diretorioLocal = implode('/', $diretoriosArray);
+
+        if(!is_dir($diretorioLocal)){
+            $this->clone();
+            return;
+        }
+
+        $diretoriosABaixar = $this->comparaDiretorios($ambiente, $diretorio)['remoto'];
+
+        if(!count($diretoriosABaixar)){
+            $this->info("O diretório local encontra-se atualizado, nenhuma ação será tomda.");
+            return;
+        }
+
+        foreach ($diretoriosABaixar as $dir) {
+            $this->clone();
+        }
+
     }
 
     private function serve()
@@ -118,6 +149,18 @@ class sighub extends Command
         if (!$process->isSuccessful()) {
             throw new ProcessFailedException($process);
         }
+    }
+
+    private function selecionaAmbiente(string $nomeAmbiente)
+    {
+        $nomesAmbientes = Arr::pluck($this->ambientes, 'nome');
+        $indiceAmbienteSelecionado = array_keys($nomesAmbientes, $nomeAmbiente);
+
+        if (!count($indiceAmbienteSelecionado)) {
+            $this->error("Ambiente '{$nomeAmbiente}' não encontrado");
+            return false;
+        }
+        return $this->ambientes[$indiceAmbienteSelecionado[0]];
     }
 
     private static function getAmbientes()
