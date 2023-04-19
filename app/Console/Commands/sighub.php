@@ -92,7 +92,7 @@ class sighub extends Command
         $this->info("Diretório clonado com sucesso!");
     }
 
-    private function push()
+    private function pull()
     {
         $diretorio = $this->argument('arg2');
         $ambiente = $this->selecionaAmbiente($this->argument('arg1'));
