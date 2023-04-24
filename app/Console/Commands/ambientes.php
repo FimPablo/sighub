@@ -41,7 +41,7 @@ class ambientes extends Command
         }
     }
 
-    private function novo()
+    private function novoAmbiente()
     {
         $ambientes = [];
         $novoAmbiente = 'N';

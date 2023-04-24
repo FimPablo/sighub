@@ -56,6 +56,11 @@ return [
             'throw' => false,
         ],
 
+        'C' => [
+            'driver' => 'local',
+            'root' => 'C:/',
+        ]
+
     ],
 
     /*
