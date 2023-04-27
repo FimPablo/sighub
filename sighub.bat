@@ -1,3 +1,7 @@
 @echo off
 
-PHP artisan sighub %1 %2 %3
+if "%1" == "install" (
+    composer install
+) else (
+    PHP artisan sighub %1 %2 %3
+)

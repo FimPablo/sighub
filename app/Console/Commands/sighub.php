@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Storage;
 use phpseclib\Crypt\RSA;
 use phpseclib\Net\SFTP;
 use Illuminate\Support\Str;
@@ -167,9 +166,7 @@ class sighub extends Command
         }
 
         $diretorioLocal = self::$diretorioLocal . $diretorio;
-        $diretoriosArray = explode('/', $diretorioLocal);
-        array_pop($diretoriosArray);
-        $diretorioLocal = implode('/', $diretoriosArray);
+        $diretorioRemoto = $ambiente['raiz'] . $diretorio;
 
         if (!is_dir($diretorioLocal)) {
             $this->clone();
@@ -177,15 +174,56 @@ class sighub extends Command
         }
 
         $this->sftp = self::conectarServidor($ambiente);
-
         if ($this->sftp === false) {
             $this->error("Falha ao se conectar com o servidor, verifique as credenciais informadas no ambiente.");
         }
 
-        $diretoriosABaixar = $this->comparaDiretorios($ambiente, $diretorio)['remoto'];
+        $listaDiretoriosRemotos = $this->listarDiretoriosRemmotos($diretorioRemoto);
+
+        $diretoriosABaixar = [];
+
+        $this->info('Calculando lista de diretorios atualizados');
+        $progresso = $this->output->createProgressBar(count($listaDiretoriosRemotos));
+        $progresso->start();
+
+        foreach ($listaDiretoriosRemotos as $k => $arquivo) {
+            $progresso->advance();
+
+            $caminhoRemoto = $diretorioRemoto . '/' . $arquivo;
+            $caminhoLocal = $diretorioLocal . '/' . $arquivo;
+
+            $infoArquivoLocal = stat($caminhoLocal);
+
+            if($infoArquivoLocal['size'] > 38241000)
+            {
+                $this->error("\nArquivo {$arquivo} é muito grande, não pode ser comparado nem será baixado");
+                continue;
+            }
+
+            $conteudoArquivoLocal = file_get_contents($caminhoLocal);
+
+            if ($conteudoArquivoLocal === false) {
+                $diretoriosABaixar[] = $diretorio.'/'.$arquivo;
+                continue;
+            }
+
+            $infoArquivoRemoto = $this->sftp->stat($caminhoRemoto);
+            $conteudoArquivoRemoto = $this->sftp->get($caminhoRemoto);
+
+            if ($conteudoArquivoLocal == $conteudoArquivoRemoto) {
+                continue;
+            }
+
+            if ($infoArquivoRemoto['mtime'] > $infoArquivoLocal['mtime']) {
+                $diretoriosABaixar[] = $diretorio.'/'.$arquivo;
+            }
+        }
+
+        $progresso->finish();
+        $this->info("\nLista gerada.");
 
         if (!count($diretoriosABaixar)) {
-            $this->info("O diretório local encontra-se atualizado, nenhuma ação será tomda.");
+            $this->info("\nO diretório local encontra-se atualizado, nenhuma ação será tomda.");
             return;
         }
 
@@ -193,7 +231,7 @@ class sighub extends Command
         foreach ($diretoriosABaixar as $key => $value) {
             $this->info(" {$value};");
         }
-        $resposta = $this->ask("Foram alterados posteriormente no servidor, deseja baixar esses arquivos? [s/n]");
+        $resposta = $this->ask("\nForam alterados posteriormente no servidor, deseja baixar esses arquivos? [s/n]");
 
         if (mb_strtoupper($resposta) == 'N') {
             return;
@@ -217,22 +255,48 @@ class sighub extends Command
         }
 
         $diretorioLocal = self::$diretorioLocal . $diretorio;
-        $diretoriosArray = explode('/', $diretorioLocal);
-        array_pop($diretoriosArray);
-        $diretorioLocal = implode('/', $diretoriosArray);
-
-        if (!is_dir($diretorioLocal)) {
-            $this->clone();
-            return;
-        }
+        $diretorioRemoto = $ambiente['raiz'] . $diretorio;
 
         $this->sftp = self::conectarServidor($ambiente);
-
         if ($this->sftp === false) {
             $this->error("Falha ao se conectar com o servidor, verifique as credenciais informadas no ambiente.");
         }
 
-        $diretoriosASubir = $this->comparaDiretorios($ambiente, $diretorio)['local'];
+        $listaDiretoriosLocais = $this->listaDiretoriosLocais($diretorioLocal);
+
+        $diretoriosASubir = [];
+
+        $this->info('Calculando lista de diretorios atualizados');
+        $progresso = $this->output->createProgressBar(count($listaDiretoriosLocais));
+        $progresso->start();
+
+        foreach ($listaDiretoriosLocais as $k => $arquivo) {
+            $progresso->advance();
+            $caminhoRemoto = $diretorioRemoto . '/' . $arquivo;
+            $caminhoLocal = $diretorioLocal . '/' . $arquivo;
+
+            $infoArquivoRemoto = $this->sftp->stat($caminhoRemoto);
+            $conteudoArquivoRemoto = $this->sftp->get($caminhoRemoto);
+
+            if ($conteudoArquivoRemoto === false) {
+                $diretoriosASubir[] = $diretorio.'/'.$arquivo;
+                continue;
+            }
+
+            $infoArquivoLocal = stat($caminhoLocal);
+            $conteudoArquivoLocal = file_get_contents($caminhoLocal);
+
+            if ($conteudoArquivoLocal == $conteudoArquivoRemoto) {
+                continue;
+            }
+
+            if ($infoArquivoLocal['mtime'] > $infoArquivoRemoto['mtime']) {
+                $diretoriosASubir[] = $diretorio.'/'.$arquivo;
+            }
+        }
+
+        $progresso->finish();
+        $this->info("\nLista gerada.");
 
         if (!count($diretoriosASubir)) {
             $this->info("O diretório remoto encontra-se atualizado, nenhuma ação será tomda.");
@@ -240,7 +304,7 @@ class sighub extends Command
         }
 
         $this->info("Os arquivos : ");
-        foreach ($diretoriosASubir as $key => $value) {
+        foreach ($diretoriosASubir as $k => $value) {
             $this->info(" {$value};");
         }
         $resposta = $this->ask("Foram alterados, deseja enviar esses arquivos? [s/n]");
@@ -254,40 +318,99 @@ class sighub extends Command
             return;
         }
 
-        //$this->criarBackupLocal($diretoriosASubir, $ambiente);
+        $this->criarBackupLocal($diretoriosASubir, $ambiente);
 
-        //$this->subirArquivos($diretoriosASubir, $ambiente);
+        $this->subirArquivos($diretoriosASubir, $ambiente);
+    }
+
+    private function serve()
+    {
+        $diretorio = $this->argument('arg1');
+        $porta = $this->argument('arg2') ?? '8000';
+        $host = $this->argument('arg3') ?? 'localhost';
+
+        $diretorio = self::$diretorioLocal . $diretorio;
+
+        if (!is_dir($diretorio)) {
+            $this->error("diretório {$diretorio} não encontrado");
+            return;
+        }
+
+        $this->info("$diretorio");
+        $this->info("Diretório hospedado em: http://{$host}:{$porta}");
+
+        $process = new Process(["php", "-S", "{$host}:{$porta}"]);
+        $process->setWorkingDirectory($diretorio);
+        $process->setTimeout(0);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            throw new ProcessFailedException($process);
+        }
+    }
+
+    private function ignore()
+    {
+        $diretorio = $this->argument('arg2');
+        $ambiente = $this->selecionaAmbiente($this->argument('arg1'));
     }
 
     private function criarBackupLocal($diretorios, $ambiente)
     {
-        $zipFilename = Date("COMMIT_d-m-Y-H-i-s.zip");
+        $zipFilename = self::$diretorioBackup . "COMMIT_{$ambiente['nome']}_" . Date("d-m-Y-H-i-s") . ".zip";
+
+        self::criarDiretorioLocal($zipFilename);
+
         $zip = new ZipArchive();
         $zip->open($zipFilename, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
-        $this->info("Baixando arquivos...");
+        $this->info("Criando backup dos arquivos...");
 
         $progresso = $this->output->createProgressBar(count($diretorios));
         $progresso->start();
 
         foreach ($diretorios as $dir) {
             $novoDiretorioExterno = $ambiente['raiz'] . $dir;
-            $novoDiretorioLocal = self::$diretorioLocal . $dir;
 
-            $tempFile = tmpfile();
+            $conteudo = $this->sftp->get($novoDiretorioExterno);
 
-            if (fwrite($tempFile, $this->sftp->get($novoDiretorioExterno)) === false) {
+            if ($conteudo === false) {
                 $this->error("Falha ao copiar conteúdo");
+                return false;
             }
 
-            Storage::putFile('temp', $tempFile);
+            $zip->addFromString($dir, $conteudo);
 
             $progresso->advance();
         }
         $progresso->finish();
 
         echo "\n";
-        $this->info("Arquivos baixados com sucesso!");
+        $this->info("Arquivos salvos com sucesso!");
+    }
+
+    private function subirArquivos($diretorios, $ambiente)
+    {
+        $this->info("Enviando arquivos...");
+
+        $progresso = $this->output->createProgressBar(count($diretorios));
+        $progresso->start();
+
+        foreach ($diretorios as $dir) {
+            $diretorioExterno = $ambiente['raiz'] . $dir;
+            $diretorioLocal = self::$diretorioLocal . $dir;
+
+            if ($this->sftp->put($diretorioExterno, file_get_contents($diretorioLocal)) === false) {
+                $this->error("Falha ao enviar conteúdo");
+                return;
+            }
+
+            $progresso->advance();
+        }
+        $progresso->finish();
+
+        echo "\n";
+        $this->info("Arquivos enviados com sucesso!");
     }
 
     private function comparaDiretorios($ambiente, $diretorio)
@@ -319,19 +442,9 @@ class sighub extends Command
 
         $dirPath = self::$diretorioLocal . $diretorio;
 
-
         $this->info("Buscando informações dos diretórios locais...");
-        $listaDiretoriosLocais = $this->listaDiretoriosLocais($dirPath);
 
-        foreach ($listaDiretoriosLocais as $filePath => $fileInfo) {
-            $filePath = str_replace('\\', '/', $filePath);
-            if ($fileInfo->isFile()) {
-                $lastChangeTime = $fileInfo->getMTime();
-                $size = $fileInfo->getSize();
-                $dirIndex = str_replace(self::$diretorioLocal, '', $filePath);
-                $informacoesDiretorios['local'][$dirIndex] = ['mtime' => $lastChangeTime ,'size' => $size];
-            }
-        }
+        $listaDiretoriosLocais = $this->listaDiretoriosLocais($dirPath);
 
         $this->info("Busca concluída");
 
@@ -343,14 +456,14 @@ class sighub extends Command
             }
 
             $iguais = $informacoesDiretorios['remoto'][$dir]['mtime'] == $informacoesDiretorios['local'][$dir]['mtime'];
-            if($iguais)
-            {
+
+            if ($iguais) {
                 unset($informacoesDiretorios['remoto'][$dir]);
                 unset($informacoesDiretorios['local'][$dir]);
                 continue;
             }
 
-            $menosRecente = $informacoesDiretorios['remoto'][$dir]['mtime'] <= $info['mtime'] ? 'remoto' : 'local';
+            $menosRecente = $informacoesDiretorios['remoto'][$dir]['mtime'] < $info['mtime'] ? 'remoto' : 'local';
 
             unset($informacoesDiretorios[$menosRecente][$dir]);
         }
@@ -361,14 +474,13 @@ class sighub extends Command
             }
 
             $iguais = $informacoesDiretorios['remoto'][$dir]['mtime'] == $informacoesDiretorios['local'][$dir]['mtime'];
-            if($iguais)
-            {
+            if ($iguais) {
                 unset($informacoesDiretorios['remoto'][$dir]);
                 unset($informacoesDiretorios['local'][$dir]);
                 continue;
             }
 
-            $menosRecente = $informacoesDiretorios['local'][$dir]['mtime'] >= $info['mtime'] ? 'local' : 'remoto';
+            $menosRecente = $informacoesDiretorios['local'][$dir]['mtime'] > $info['mtime'] ? 'local' : 'remoto';
 
             unset($informacoesDiretorios[$menosRecente][$dir]);
         }
@@ -388,32 +500,6 @@ class sighub extends Command
         $this->info("Arquivos comparados");
 
         return $informacoesDiretorios;
-    }
-
-    private function serve()
-    {
-        $diretorio = $this->argument('arg1');
-        $porta = $this->argument('arg2') ?? '8000';
-        $host = $this->argument('arg3') ?? 'localhost';
-
-        $diretorio = self::$diretorioLocal . $diretorio;
-
-        if (!is_dir($diretorio)) {
-            $this->error("diretório {$diretorio} não encontrado");
-            return;
-        }
-
-        $this->info("$diretorio");
-        $this->info("Diretório hospedado em: http://{$host}:{$porta}");
-
-        $process = new Process(["php", "-S", "{$host}:{$porta}"]);
-        $process->setWorkingDirectory($diretorio);
-        $process->setTimeout(0);
-        $process->run();
-
-        if (!$process->isSuccessful()) {
-            throw new ProcessFailedException($process);
-        }
     }
 
     private function baixarListaDiretorios(array $diretorios, $ambiente)
@@ -516,7 +602,20 @@ class sighub extends Command
     private function listaDiretoriosLocais($dirPath)
     {
         $dirIterator = new RecursiveDirectoryIterator($dirPath, RecursiveDirectoryIterator::SKIP_DOTS);
-        return new RecursiveIteratorIterator($dirIterator, RecursiveIteratorIterator::SELF_FIRST);
+        $dirIterator = new RecursiveIteratorIterator($dirIterator, RecursiveIteratorIterator::SELF_FIRST);
+
+        $listaLocal = [];
+
+        foreach ($dirIterator as $filePath => $fileInfo) {
+            $filePath = str_replace('\\', '/', $filePath);
+
+            if ($fileInfo->isFile()) {
+                $filePath = str_replace($dirPath.'/', '', $filePath);
+                $listaLocal[] = $filePath;
+            }
+        }
+
+        return $listaLocal;
     }
 
     private function apresentacao()
