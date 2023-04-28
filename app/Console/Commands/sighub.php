@@ -593,6 +593,5 @@ class sighub extends Command
         $this->info(" ->inicia um servidor PHP no diretorio local informado");
         $this->info(" -->'diretorio' : caminho do diretorio que deseja servir");
         $this->info(" -->'porta?' : OPCIONAL, padrão 8000, porta onde o servidor servirá o diretório");
-        $this->info(" -->'host?' : OPCIONAL, padrão localhost, host onde o servidor servirá o diretório");
     }
 }
