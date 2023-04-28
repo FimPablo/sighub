@@ -18,9 +18,10 @@ class sighub extends Command
     protected $signature = 'sighub {acao?} {arg1?} {arg2?} {arg3?}';
     protected $description = 'Command description';
     private array $ambientes;
-
     private static string $diretorioLocal = 'C:/SigHub/arquivos/';
     private static string $diretorioBackup = 'C:/SigHub/commits/';
+    private static string $diretorioServidor = 'C:/Sighub/servidorLocal/';
+    private static string $diretorioApache = 'C:/SigHub/servidorLocal/apache/bin/';
 
     private $sftp;
 
@@ -327,7 +328,6 @@ class sighub extends Command
     {
         $diretorio = $this->argument('arg1');
         $porta = $this->argument('arg2') ?? '8000';
-        $host = $this->argument('arg3') ?? 'localhost';
 
         $diretorio = self::$diretorioLocal . $diretorio;
 
@@ -337,16 +337,54 @@ class sighub extends Command
         }
 
         $this->info("$diretorio");
-        $this->info("Diretório hospedado em: http://{$host}:{$porta}");
+        $this->info("Diretório hospedado em: http://localhost:{$porta}");
 
-        $process = new Process(["php", "-S", "{$host}:{$porta}"]);
-        $process->setWorkingDirectory($diretorio);
+        $process = new Process(
+            ["httpd", "-f", "C:/SigHub/servidorLocal/apache/conf/httpd.conf", 
+            "-c", "<Directory '{$diretorio}'>",
+            "-c", "AllowOverride All",
+            "-c", "Order allow,deny",
+            "-c", "Allow from all",
+            "-c", "</Directory>",
+            "-c", "DocumentRoot '{$diretorio}'", 
+            "-c", "Listen {$porta}"]
+        );
+        $process->setWorkingDirectory(self::$diretorioApache);
         $process->setTimeout(0);
         $process->run();
 
         if (!$process->isSuccessful()) {
             throw new ProcessFailedException($process);
         }
+    }
+
+    private function install()
+    {
+        if (is_dir(self::$diretorioServidor)) {
+            $this->info("\n Os arquivos do servidor local estão instalados.");
+            return;
+        }
+
+        mkdir(self::$diretorioServidor, 0777, true);
+
+        $zipServerPath = public_path('PhpServerLegado.zip');
+
+        $zipServer = new ZipArchive();
+
+        if(!$zipServer->open($zipServerPath)){
+            $this->error("\nNão foi possivel encontrar os arquivos do servidor local, baixe novamente o projeto");
+        }
+
+        $this->info("\nDescompactando arquivos do servidor local...");
+        if(!$zipServer->extractTo(self::$diretorioServidor))
+        {
+            $this->error("\nFalha ao descompactar os arquivos do servidor local, baixe novamente o projeto");
+            return;
+        }
+
+        $zipServer->close();
+
+        $this->info("\nO servidor local foi instalado com sucesso!");
     }
 
     private function ignore()
@@ -413,95 +451,6 @@ class sighub extends Command
         $this->info("Arquivos enviados com sucesso!");
     }
 
-    private function comparaDiretorios($ambiente, $diretorio)
-    {
-        $diretorioExterno = $ambiente['raiz'] . $diretorio;
-
-        $informacoesDiretorios = [
-            'remoto' => [],
-            'local' => []
-        ];
-
-        $this->info("Buscando informações dos diretórios remotos...");
-        $listaDiretoriosRemotos = $this->listarDiretoriosRemmotos($diretorioExterno);
-
-        $progresso = $this->output->createProgressBar(count($listaDiretoriosRemotos));
-        $progresso->start();
-
-        foreach ($listaDiretoriosRemotos as $key => $dir) {
-            $fileInfo = $this->sftp->stat($diretorioExterno . '/' . $dir);
-            $dirIndex = str_replace($ambiente['raiz'], '', $diretorioExterno . '/' . $dir);
-
-            $informacoesDiretorios['remoto'][$dirIndex] = ['mtime' => $fileInfo['mtime'], 'size' => $fileInfo['size']];
-            $progresso->advance();
-        }
-
-        $progresso->finish();
-        echo "\n";
-        $this->info("Busca concluída");
-
-        $dirPath = self::$diretorioLocal . $diretorio;
-
-        $this->info("Buscando informações dos diretórios locais...");
-
-        $listaDiretoriosLocais = $this->listaDiretoriosLocais($dirPath);
-
-        $this->info("Busca concluída");
-
-        $this->info("Comparando arquivos...");
-
-        foreach ($informacoesDiretorios['local'] as $dir => $info) {
-            if (!isset($informacoesDiretorios['remoto'][$dir])) {
-                continue;
-            }
-
-            $iguais = $informacoesDiretorios['remoto'][$dir]['mtime'] == $informacoesDiretorios['local'][$dir]['mtime'];
-
-            if ($iguais) {
-                unset($informacoesDiretorios['remoto'][$dir]);
-                unset($informacoesDiretorios['local'][$dir]);
-                continue;
-            }
-
-            $menosRecente = $informacoesDiretorios['remoto'][$dir]['mtime'] < $info['mtime'] ? 'remoto' : 'local';
-
-            unset($informacoesDiretorios[$menosRecente][$dir]);
-        }
-
-        foreach ($informacoesDiretorios['remoto'] as $dir => $info) {
-            if (!isset($informacoesDiretorios['local'][$dir])) {
-                continue;
-            }
-
-            $iguais = $informacoesDiretorios['remoto'][$dir]['mtime'] == $informacoesDiretorios['local'][$dir]['mtime'];
-            if ($iguais) {
-                unset($informacoesDiretorios['remoto'][$dir]);
-                unset($informacoesDiretorios['local'][$dir]);
-                continue;
-            }
-
-            $menosRecente = $informacoesDiretorios['local'][$dir]['mtime'] > $info['mtime'] ? 'local' : 'remoto';
-
-            unset($informacoesDiretorios[$menosRecente][$dir]);
-        }
-
-        $listaRemoto = [];
-        foreach ($informacoesDiretorios['remoto'] as $dir => $info) {
-            $listaRemoto[] = $dir;
-        }
-        $informacoesDiretorios['remoto'] = $listaRemoto;
-
-        $listaRemoto = [];
-        foreach ($informacoesDiretorios['local'] as $dir => $info) {
-            $listaRemoto[] = $dir;
-        }
-        $informacoesDiretorios['local'] = $listaRemoto;
-
-        $this->info("Arquivos comparados");
-
-        return $informacoesDiretorios;
-    }
-
     private function baixarListaDiretorios(array $diretorios, $ambiente)
     {
         $this->info("Baixando arquivos...");
@@ -566,6 +515,8 @@ class sighub extends Command
         $diretoriosArray = explode('/', $diretorio);
         array_pop($diretoriosArray);
         $diretorio = implode('/', $diretoriosArray);
+
+        dd($diretorio);
 
         if (!is_dir($diretorio)) {
             mkdir($diretorio, 0777, true);
