@@ -1,18 +1,3 @@
 [
-    {
-        "nome": "prod",
-        "host": "172.16.20.10",
-        "user": "pfim",
-        "keyFile": "C:\/Users\/pablo.fim\/Desktop\/pfim_etherium_prod",
-        "password": "@8dwLF",
-        "raiz": "\/var\/www\/"
-    },
-    {
-        "nome": "dev",
-        "host": "172.16.20.111",
-        "user": "pfim",
-        "keyFile": "C:\/Users\/pablo.fim\/Desktop\/pfim_etherium_dev",
-        "password": "@8dwLF",
-        "raiz": "\/var\/www\/"
-    }
+    
 ]
